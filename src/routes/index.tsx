@@ -14,6 +14,8 @@ import { type ChangeEvent, type DragEvent, useRef, useState } from "react";
 import { Button } from "#/components/ui/button";
 import { Input } from "#/components/ui/input";
 import { axios } from "#/lib/utils";
+import ReactMarkdown from 'react-markdown';
+
 
 export const Route = createFileRoute("/")({ component: Home });
 
@@ -79,7 +81,7 @@ function Home() {
 				},
 			});
 
-			console.log("Upload successful:", response.data?.data[0]);
+			console.log("Upload successful:", response.data?.data);
 
 			// 2. Extract and store response.data.prompt in state
 			setFileState((prev) =>
@@ -88,7 +90,7 @@ function Home() {
 							...prev,
 							progress: 100,
 							status: "completed",
-							prompt: response.data?.data[0],
+							prompt: response.data?.data.prompt,
 						}
 					: null,
 			);
@@ -276,9 +278,24 @@ function Home() {
 								<h3 className="text-xs font-semibold uppercase tracking-wider text-indigo-900 mb-1">
 									Generated Prompt
 								</h3>
-								<p className="text-sm text-slate-700 whitespace-pre-wrap leading-relaxed">
+								<ReactMarkdown 
+									components={{
+									// Forces links to open safely in a new tab
+									a: ({ node, ...props }) => (
+										<a {...props} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline" />
+									),
+									// Inline and basic block code styling
+									code: ({ node, className, children, ...props }) => {
+										return (
+										<code {...props} className={`${className} bg-gray-200 px-1.5 py-0.5 rounded text-sm font-mono text-red-600`}>
+											{children}
+										</code>
+										);
+									}
+									}}
+								>
 									{fileState.prompt || ""}
-								</p>
+								</ReactMarkdown>
 							</div>
 						}
 					</div>

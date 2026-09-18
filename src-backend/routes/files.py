@@ -2,12 +2,26 @@ import os
 import tempfile
 from pathlib import Path
 
+from dotenv import load_dotenv
 from fastapi import APIRouter, HTTPException, UploadFile
-from ollama import ChatResponse, chat
+from openai import OpenAI
 from paddleocr import PaddleOCRVL
 
 # You can add a prefix and tags for cleaner code and structured Swagger docs
 router = APIRouter(prefix="/api/v1/files", tags=["Users Management"])
+
+
+# 1. Get the path of the current script's directory
+current_dir = Path(__file__).resolve().parent
+
+# 2. Point to the .env file in the parent directory (one level up)
+env_path = current_dir.parent / '..' / '.env'
+
+# 3. Load the environment variables from that specific path
+load_dotenv(dotenv_path=env_path)
+
+
+OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY","")
 
 @router.post("")
 async def uploadFile(file: UploadFile):
@@ -48,42 +62,57 @@ async def uploadFile(file: UploadFile):
         )
 
         output = pipeline.predict(input=temp_file_path)
-        for res in output:
-            pass
+        global prompt
+
+        # for res in output:
+            # pass
             # res.print() ## Print the structured prediction output
             # res.save_to_json(save_path=output_dir) ## Save the current image's structured result in JSON format
             # res.save_to_markdown(save_path=output_dir)
             # print(res['parsing_res_list'])
+            # print(output[0]['parsing_res_list'])
 
-        # print(output[0]['parsing_res_list'])
-        response: ChatResponse = chat(
-                        model='gemma4',
-                        messages=[
-                            {
-                            'role': 'user',
-                            'content': f'''
-                                Act as an expert ATS (Applicant Tracking System) scanner, technical recruiter, and professional resume writer with 15+ years of experience. 
-            
-                                I want you to analyze my current resume against the provided job description. Do not fabricate or invent any new work experiences, job titles, or metrics—strictly use the factual background provided in my resume.
-            
-                                Here is my Current Resume parsed by OCR:
-                                {output[0]['parsing_res_list']}
-            
-                                Please provide your output in the following clear sections:
-                                1. ATS Match Score: Give an estimated match percentage (0-100%) based on keyword alignment, skills overlap, and experience relevance.
-                                2. Critical Missing Keywords & Skills: List the hard skills, soft skills, and tools mentioned in the job description that are missing or underrepresented in my resume.
-                                3. Section-by-Section Weaknesses: Point out any vague bullet points, missing metrics, or poor formatting choices that would hurt my ranking.
-                                4. Tailored Rewrite: Rewrite my professional summary and work experience bullet points to          
-                            ''',
-                            },
-                        ],
-                        )
-        prompt =  response['message']['content']
-            
+        print('My ENV: ', os.getenv("OPENROUTER_API_KEY", ""))
+        #
+
+
+        client = OpenAI(
+        base_url="https://openrouter.ai/api/v1",
+        api_key=OPENROUTER_API_KEY,
+        )
+
+        # First API call with reasoning
+        response = client.chat.completions.create(
+        model="z-ai/glm-5.2:free",
+        messages= [
+            {
+            'role': 'user',
+            'content': f'''
+                Act as an expert ATS (Applicant Tracking System) scanner, technical recruiter, and professional resume writer with 15+ years of experience. 
+
+                I want you to analyze my current resume based on industry-standard ATS-friendliness, modern hiring guidelines, and recruitment best practices. Do not fabricate or invent any new work experiences, job titles, or metrics—strictly use the factual background provided.
+
+                Here is my resume detected by OCR:
+                {output[0]['parsing_res_list']}
+
+                Please provide your output in the following clear sections:
+                1. ATS Compliance Rating: Give an estimated score (0-100%) based on structural parseability, formatting safety, and structural best practices.
+                2. Structural & Formatting Flaws: Identify any elements that will break an ATS parser (e.g., tables, columns, text boxes, headers/footers, special fonts, icons, or missing standard section titles).
+                3. Bullet Point & Metrics Audit: Point out vague bullet points, missing quantifiable achievements (metrics/KPIs), and weak action verbs.
+                4. Optimized Rewrite: Rewrite my professional summary and work experience bullet points to maximize impact, use strong action verbs, and follow the Google X-Y-Z formula (Accomplished [X] as measured by [Y], by doing [Z]), while strictly adhering to my actual, factual background.
+                ''',
+            },
+        ],
+        extra_body={"reasoning": {"enabled": True}}
+        )
+
+        # Extract the assistant message with reasoning_details
+        response = response.choices[0].message.content
+        print(response, "Testing")
         return {
             'success': True,
             'data': {
-                prompt 
+                'prompt': response, 
             }
         }
     except Exception as e:  # noqa: BLE001
