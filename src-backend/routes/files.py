@@ -1,4 +1,5 @@
 import os
+import platform
 import tempfile
 from pathlib import Path
 
@@ -53,14 +54,22 @@ async def uploadFile(file: UploadFile):
         with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as tmp_file:
             tmp_file.write(contents)
             temp_file_path = tmp_file.name
-        
-        pipeline = PaddleOCRVL(
-            use_layout_detection=False,
-            vl_rec_backend="mlx-vlm-server", 
-            vl_rec_server_url="http://localhost:8111/",
-            vl_rec_api_model_name="PaddlePaddle/PaddleOCR-VL-1.6",
-        )
 
+        pipeline = None
+
+        if platform.system() == "Windows":
+            pipeline = PaddleOCRVL(
+                use_layout_detection=False,
+                vl_rec_api_model_name="PaddlePaddle/PaddleOCR-VL-1.6",
+            )
+        else: 
+             pipeline = PaddleOCRVL(
+                use_layout_detection=False,
+                vl_rec_backend="mlx-vlm-server", 
+                vl_rec_server_url="http://localhost:8111/",
+                vl_rec_api_model_name="PaddlePaddle/PaddleOCR-VL-1.6",
+            )
+             
         output = pipeline.predict(input=temp_file_path)
         global prompt
 

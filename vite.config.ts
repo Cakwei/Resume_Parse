@@ -9,6 +9,12 @@ import { nitro } from 'nitro/vite'
 
 const config = defineConfig({
   resolve: { tsconfigPaths: true },
+  server:{
+    watch: {
+      // tell vite to ignore watching `src-tauri`
+      ignored: ['**/src-backend/**'],
+    },
+  },
   plugins: [
     devtools(),
     nitro({ rollupConfig: { external: [/^@sentry\//] } }),
