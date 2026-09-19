@@ -39,73 +39,98 @@ const MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024;
 function Home() {
 	const [fileState, setFileState] = useState<SingleUploadState | null>(null);
 	const [isDragging, setIsDragging] = useState(false);
+	const [aiOutput, setAiOutput] = useState("");
 	const fileInputRef = useRef<HTMLInputElement>(null);
 
 	const uploadFile = async (file: File) => {
-		// 1. Validation
-		if (!ALLOWED_TYPES.includes(file.type)) {
-			alert(
-				`"${file.name}" is not a supported file type. (PDF, PNG, JPG, WEBP only)`,
-			);
-			return;
-		}
+    // File Validation
+    if (!ALLOWED_TYPES.includes(file.type)) {
+        alert(`"${file.name}" is not a supported file type.`);
+        return;
+    }
 
-		if (file.size > MAX_FILE_SIZE_BYTES) {
-			alert(`"${file.name}" exceeds the ${MAX_FILE_SIZE_MB}MB size limit.`);
-			return;
-		}
+    if (file.size > MAX_FILE_SIZE_BYTES) {
+        alert(`"${file.name}" exceeds the ${MAX_FILE_SIZE_MB}MB size limit.`);
+        return;
+    }
 
-		// 2. Set initial state
-		setFileState({
-			file,
-			progress: 0,
-			status: "uploading",
-		});
+    // 2. Initial State
+    setFileState({
+        file,
+        progress: 100,
+        status: "uploading",
+    });
+    setAiOutput("");
 
-		const formData = new FormData();
-		formData.append("file", file);
+    const formData = new FormData();
+    formData.append("file", file);
 
-		// 3. Perform network upload with Axios progress tracking
-		try {
-			const response = await axios.post("/api/v1/files", formData, {
-				headers: {
-					"Content-Type": "multipart/form-data",
-				},
-				onUploadProgress: (progressEvent) => {
-					if (progressEvent.total) {
-						const progress = Math.round(
-							(progressEvent.loaded * 100) / progressEvent.total,
-						);
-						setFileState((prev) => (prev ? { ...prev, progress } : null));
-					}
-				},
-			});
+    try {
+        const response = await fetch("http://localhost:3001/api/v1/files", {
+            method: "POST",
+            body: formData,
+        });
 
-			console.log("Upload successful:", response.data?.data);
+        if (!response.ok) {
+            throw new Error(`Upload failed with status ${response.status}`);
+        }
 
-			// 2. Extract and store response.data.prompt in state
-			setFileState((prev) =>
-				prev
-					? {
-							...prev,
-							progress: 100,
-							status: "completed",
-							prompt: response.data?.data.prompt,
-						}
-					: null,
-			);
-		} catch (error) {
-			console.error("Upload error:", error);
-			setFileState((prev) =>
-				prev
-					? {
-							...prev,
-							status: "error",
-							errorMessage: "Failed to upload file. Please try again.",
-						}
-					: null,
-			);
-		}
+        if (!response.body) {
+            throw new Error("ReadableStream not supported or empty response body.");
+        }
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder("utf-8");
+        let buffer = "";
+
+        // Continuously read stream chunks
+        while (true) {
+            const { value, done } = await reader.read();
+            if (done) break;
+
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split("\n");
+
+            buffer = lines.pop() || "";
+
+			for (const line of lines) {
+				const trimmedLine = line.trim();
+				if (trimmedLine.startsWith("data: ")) {
+					// Convert escaped string back to actual linebreaks
+					const token = trimmedLine.slice(6).replace(/\\n/g, "\n");
+					setAiOutput((prev) => prev + token);
+				}
+			}
+        }
+
+        // Process remaining text in buffer after stream ends
+        if (buffer.trim().startsWith("data: ")) {
+            const token = buffer.trim().slice(6);
+            setAiOutput((prev) => prev + token);
+        }
+
+        // 5. Update state on completion
+        setFileState((prev) =>
+            prev
+                ? {
+                      ...prev,
+                      progress: 100,
+                      status: "completed",
+                  }
+                : null
+        );
+    } catch (error) {
+        console.error("Upload/Streaming error:", error);
+        setFileState((prev) =>
+            prev
+                ? {
+                      ...prev,
+                      status: "error",
+                      errorMessage: "Failed to process file and stream output.",
+                  }
+                : null
+        	);
+    	}
 	};
 
 	const removeFile = () => {
@@ -294,7 +319,7 @@ function Home() {
 									}
 									}}
 								>
-									{fileState.prompt || ""}
+									{aiOutput}
 								</ReactMarkdown>
 							</div>
 						}
