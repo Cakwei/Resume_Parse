@@ -13,9 +13,8 @@ import { createFileRoute } from "@tanstack/react-router";
 import { type ChangeEvent, type DragEvent, useRef, useState } from "react";
 import { Button } from "#/components/ui/button";
 import { Input } from "#/components/ui/input";
-import { axios } from "#/lib/utils";
 import ReactMarkdown from 'react-markdown';
-
+import remarkGfm from 'remark-gfm';
 
 export const Route = createFileRoute("/")({ component: Home });
 
@@ -24,7 +23,7 @@ interface SingleUploadState {
 	progress: number;
 	status: "uploading" | "completed" | "error";
 	errorMessage?: string;
-	prompt?: string; // 1. Added prompt to state interface
+	prompt?: string;
 }
 
 const ALLOWED_TYPES = [
@@ -54,7 +53,7 @@ function Home() {
         return;
     }
 
-    // 2. Initial State
+    // Initial State
     setFileState({
         file,
         progress: 100,
@@ -109,7 +108,7 @@ function Home() {
             setAiOutput((prev) => prev + token);
         }
 
-        // 5. Update state on completion
+        // Update state on completion
         setFileState((prev) =>
             prev
                 ? {
@@ -304,19 +303,53 @@ function Home() {
 									Generated Prompt
 								</h3>
 								<ReactMarkdown 
+									remarkPlugins={[remarkGfm]}
 									components={{
-									// Forces links to open safely in a new tab
-									a: ({ node, ...props }) => (
-										<a {...props} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline" />
-									),
-									// Inline and basic block code styling
-									code: ({ node, className, children, ...props }) => {
+										// 1. Force links to open in a new tab safely
+										a: ({ node, ...props }) => (
+										<a 
+											{...props} 
+											target="_blank" 
+											rel="noopener noreferrer" 
+											className="text-blue-600 hover:underline" 
+										/>
+										),
+										hr: () => {
+											
+										},
+										// 2. Styled inline and block code
+										code: ({ node, className, children, ...props }) => {
 										return (
-										<code {...props} className={`${className} bg-gray-200 px-1.5 py-0.5 rounded text-sm font-mono text-red-600`}>
+											<code 
+											{...props} 
+											className={`${className || ''} bg-gray-200 px-1.5 py-0.5 rounded text-sm font-mono text-red-600`}
+											>
 											{children}
-										</code>
+											</code>
 										);
-									}
+										},
+										// 3. Custom Table Styling (Prevents overflowing and broken lines)
+										table: ({ node, ...props }) => (
+										<div className="overflow-x-auto my-4">
+											<table {...props} className="min-w-full divide-y divide-gray-300 border border-gray-200 text-sm" />
+										</div>
+										),
+										thead: ({ node, ...props }) => (
+										<thead {...props} className="bg-gray-100 font-semibold text-gray-700" />
+										),
+										th: ({ node, ...props }) => (
+										<th {...props} className="px-3 py-2 text-left border-b border-gray-300" />
+										),
+										td: ({ node, ...props }) => (
+										<td {...props} className="px-3 py-2 border-b border-gray-200" />
+										),
+										// 4. Headings styling
+										h2: ({ node, ...props }) => (
+										<h2 {...props} className="text-xl font-bold mt-6 mb-3 text-gray-800" />
+										),
+										h3: ({ node, ...props }) => (
+										<h3 {...props} className="text-lg font-semibold mt-4 mb-2 text-gray-800" />
+										)
 									}}
 								>
 									{aiOutput}

@@ -87,7 +87,34 @@ async def uploadFile(file: UploadFile):
                             2. Structural & Formatting Flaws: Identify any elements that will break an ATS parser (e.g., tables, columns, text boxes, headers/footers, special fonts, icons, or missing standard section titles).
                             3. Bullet Point & Metrics Audit: Point out vague bullet points, missing quantifiable achievements (metrics/KPIs), and weak action verbs.
                             4. Optimized Rewrite: Rewrite my professional summary and work experience bullet points to maximize impact, use strong action verbs, and follow the Google X-Y-Z formula (Accomplished [X] as measured by [Y], by doing [Z]), while strictly adhering to my actual, factual background.
+                            [SYSTEM INSTRUCTION: MARKDOWN FORMATTING REQUIREMENTS]
+                            
+                            [VITAL] You are generating Markdown output to be parsed directly by `react-markdown` with `remark-gfm`. 
+
+                            [SYSTEM INSTRUCTION: MARKDOWN FORMATTING RULES]
+                            You must format all response output using strictly valid GitHub Flavored Markdown (GFM). Follow these formatting rules without exception:
+
+                            1. HEADINGS:
+                            - Always place a blank line (double newline) before and after every heading.
+                            - Always put exactly one space between the heading hashes and the text (e.g., use "## 1. Title", NEVER "##1. Title").
+                            - NEVER put extra hashes before numbers (e.g., NEVER output "## #1. Title" or "###1. Title").
+                            - Follow standard numbered heading structures: "## 1. Title", "## 2. Title".
+
+                            2. TABLES:
+                            - All Markdown tables MUST be preceded and followed by a blank line.
+                            - Use standard GFM table syntax with a header row, divider row (|---|---|), and data rows.
+                            - Never combine table rows or text onto single continuous lines.
+
+                            3. LISTS:
+                            - Always leave a space between list markers/bullets and the text (e.g., "- ❌ Missing" NOT "-❌Missing").
+                            - Ensure list items are placed on separate lines.
+
+                            4. SPACING & PARAGRAPHS:
+                            - Ensure standard double-newlines (\n\n) between distinct paragraphs, lists, headings, and tables to prevent text collapsing or unparsed blocks.
+                            
+                            5. DO NOT use hastags if possible for headers
                             ''',
+
                         },
                     ],
                     extra_body={"reasoning": {"enabled": True}}
