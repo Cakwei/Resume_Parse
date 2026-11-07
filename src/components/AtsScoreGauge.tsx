@@ -7,16 +7,48 @@ export interface AtsMetrics {
 }
 
 interface AtsScoreGaugeProps {
-	score: number;
+	score?: number | null;
 	metrics?: AtsMetrics;
 	size?: number;
+	isLoading?: boolean;
 }
 
 export function AtsScoreGauge({
 	score,
 	metrics,
 	size = 140,
+	isLoading = false,
 }: AtsScoreGaugeProps) {
+	if (isLoading || score === null || score === undefined) {
+		return (
+			<div className="bg-white rounded-2xl border border-slate-200/80 p-6 shadow-xs flex flex-col md:flex-row items-center gap-6 animate-pulse">
+				<div className="flex flex-col items-center shrink-0">
+					<div
+						className="relative flex items-center justify-center rounded-full border-4 border-slate-100 border-t-indigo-500 animate-spin"
+						style={{ width: size, height: size }}
+					/>
+					<span className="mt-3 px-3 py-1 rounded-full text-xs font-semibold bg-slate-100 text-slate-500">
+						Evaluating...
+					</span>
+				</div>
+				<div className="flex-1 w-full space-y-3">
+					<div className="h-4 w-32 bg-slate-200 rounded" />
+					<div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+						{[1, 2, 3, 4].map((i) => (
+							<div
+								key={i}
+								className="p-3 rounded-xl bg-slate-50 border border-slate-100 space-y-2"
+							>
+								<div className="h-3 w-20 bg-slate-200 rounded" />
+								<div className="w-full bg-slate-200 rounded-full h-1.5" />
+							</div>
+						))}
+					</div>
+				</div>
+			</div>
+		);
+	}
+
 	const clampedScore = Math.min(100, Math.max(0, Math.round(score)));
 	const strokeWidth = 10;
 	const radius = (size - strokeWidth) / 2;
@@ -51,29 +83,34 @@ export function AtsScoreGauge({
 
 	const rating = getColorClasses(clampedScore);
 
-	const subMetricList = [
-		{ name: "Parseability", value: metrics?.parseability ?? clampedScore },
-		{
-			name: "Formatting Safety",
-			value: metrics?.formattingSafety ?? clampedScore,
-		},
-		{
-			name: "Metric Impact",
-			value: metrics?.metricImpact ?? Math.max(50, clampedScore - 5),
-		},
-		{
-			name: "Keyword Relevance",
-			value: metrics?.keywordRelevance ?? clampedScore,
-		},
-	];
+	const subMetricList: Array<{ name: string; value: number }> = [];
 
 	if (
 		metrics?.roleMatchScore !== undefined &&
 		metrics?.roleMatchScore !== null
 	) {
-		subMetricList.unshift({
+		subMetricList.push({
 			name: "Target Role Match",
 			value: metrics.roleMatchScore,
+		});
+	}
+
+	if (metrics?.parseability !== undefined) {
+		subMetricList.push({ name: "Parseability", value: metrics.parseability });
+	}
+	if (metrics?.formattingSafety !== undefined) {
+		subMetricList.push({
+			name: "Formatting Safety",
+			value: metrics.formattingSafety,
+		});
+	}
+	if (metrics?.metricImpact !== undefined) {
+		subMetricList.push({ name: "Metric Impact", value: metrics.metricImpact });
+	}
+	if (metrics?.keywordRelevance !== undefined) {
+		subMetricList.push({
+			name: "Keyword Relevance",
+			value: metrics.keywordRelevance,
 		});
 	}
 

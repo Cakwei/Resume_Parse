@@ -43,6 +43,10 @@ interface ATSScoreBreakdown {
 	formatting_safety: number;
 	metric_impact: number;
 	role_match_score?: number | null;
+	executive_rationale?: string;
+	structural_flaws?: string[];
+	bullet_metrics_audit?: string[];
+	optimized_rewrites?: string[];
 	matched_skills: string[];
 	missing_skills: string[];
 	profile?: CandidateProfile;
@@ -266,8 +270,8 @@ function Home() {
 	const rewritesSection = getSectionText("Optimized Rewrites");
 	const scorecardSection = getSectionText("ATS Compliance Rating");
 
-	// Estimated score fallback if JSON is still streaming
-	const effectiveScore = structuredData?.overall_score ?? 82;
+	const effectiveScore = structuredData?.overall_score ?? null;
+	const isEvaluating = fileState?.status === "uploading" && !structuredData;
 
 	return (
 		<div className="min-h-screen bg-slate-50/70 p-4 sm:p-6 md:p-12 flex justify-center items-start text-slate-900 font-sans">
@@ -445,6 +449,7 @@ function Home() {
 						{/* Score Gauge Summary */}
 						<AtsScoreGauge
 							score={effectiveScore}
+							isLoading={isEvaluating}
 							metrics={{
 								parseability: structuredData?.parseability,
 								keywordRelevance: structuredData?.keyword_relevance,
@@ -520,7 +525,7 @@ function Home() {
 						{/* Multi-Tab Dashboard Container */}
 						<div className="bg-white rounded-2xl border border-slate-200/80 shadow-xs overflow-hidden">
 							{/* Tab Bar */}
-							<div className="flex border-b border-slate-200 bg-slate-50/60 px-4 pt-3 space-x-2 overflow-x-auto text-xs font-semibold">
+							<div className="flex border-b border-slate-200 bg-slate-50/60 px-4 pt-3 space-x-2 overflow-x-auto text-xs font-semibold scrollbar-none">
 								<button
 									type="button"
 									onClick={() => setActiveTab("scorecard")}

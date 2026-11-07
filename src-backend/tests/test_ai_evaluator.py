@@ -53,3 +53,26 @@ def test_schema_model_validation():
     assert len(score.matched_skills) == 3
     assert score.profile.name == "Jane Developer"
     assert len(score.profile.experience) == 1
+
+def test_schema_to_markdown_audit_synchronization():
+    sample_data = {
+        "overall_score": 92,
+        "parseability": 95,
+        "keyword_relevance": 88,
+        "formatting_safety": 94,
+        "metric_impact": 90,
+        "role_match_score": 89,
+        "executive_rationale": "High-impact engineering profile with solid metrics.",
+        "structural_flaws": ["Remove table wrappers around education."],
+        "bullet_metrics_audit": ["Action verbs are strong across experience."],
+        "optimized_rewrites": ["Increased backend throughput by 40% using async FastAPI."],
+        "matched_skills": ["Python", "FastAPI"],
+        "missing_skills": ["Docker"],
+    }
+    score = ATSScoreBreakdown.model_validate(sample_data)
+    md = score.to_markdown_audit()
+    assert "**Estimated Overall ATS Score**: 92%" in md
+    assert "**Parseability Rating**: 95%" in md
+    assert "**Role Match Score**: 89%" in md
+    assert "Remove table wrappers around education." in md
+    assert "Increased backend throughput by 40%" in md
