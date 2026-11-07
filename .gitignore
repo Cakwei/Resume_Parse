@@ -14,3 +14,5 @@ todos.json
 __pycache__/
 *.pyc
 .venv
+.pnpm-store
+.pytest_cache/

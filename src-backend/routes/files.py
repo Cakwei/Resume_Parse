@@ -1,146 +1,63 @@
 import os
-import platform
 import tempfile
+import asyncio
+from typing import Optional
 from pathlib import Path
+from fastapi import APIRouter, HTTPException, UploadFile, Form
+from fastapi.responses import StreamingResponse
 
-from dotenv import load_dotenv
-from fastapi import APIRouter, HTTPException, UploadFile
-from fastapi.responses import StreamingResponse  # 👈 Import this
-from openai import AsyncOpenAI
-from paddleocr import PaddleOCRVL
+from services.extractor import extract_document_text
+from services.ai_evaluator import generate_ats_stream
 
-router = APIRouter(prefix="/api/v1/files", tags=["Users Management"])
+router = APIRouter(prefix="/api/v1/files", tags=["Resume Processing"])
 
-current_dir = Path(__file__).resolve().parent
-env_path = current_dir.parent / '..' / '.env'
-load_dotenv(dotenv_path=env_path)
-
-OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY","")
+ALLOWED_EXTENSIONS = ('.png', '.jpg', '.jpeg', '.bmp', '.tiff', '.webp', '.pdf')
+MAX_FILE_SIZE = 20 * 1024 * 1024  # 20MB
 
 @router.post("")
-async def uploadFile(file: UploadFile):
-    output_dir = Path("./output")
-    output_dir.mkdir(parents=True, exist_ok=True)
-
+async def uploadFile(
+    file: UploadFile,
+    job_description: Optional[str] = Form(None)
+):
     if not file.filename:
         raise HTTPException(status_code=400, detail="No file selected")
-    
-    if not file.filename.lower().endswith(('.png', '.jpg', '.jpeg', '.bmp', '.tiff', '.webp', '.pdf')):
-        raise HTTPException(
-            status_code=400,
-            detail='Unsupported file type. Use PNG, JPG, JPEG, BMP, TIFF, or WEBP'
-        )
-    
-    contents = await file.read()
-    if len(contents) > 20 * 1024 * 1024:
-        raise HTTPException(status_code=413, detail="File too large. Maximum size is 20MB.")
     
     _, ext = os.path.splitext(file.filename)
     ext = ext.lower() if ext else '.jpg'
     
-    # Keep temp file handling clean
+    if ext not in ALLOWED_EXTENSIONS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unsupported file type '{ext}'. Allowed types: PDF, PNG, JPG, JPEG, BMP, TIFF, WEBP"
+        )
+    
+    contents = await file.read()
+    if len(contents) > MAX_FILE_SIZE:
+        raise HTTPException(status_code=413, detail="File too large. Maximum size is 20MB.")
+    
+    # Save to temp file for extraction
     with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as tmp_file:
         tmp_file.write(contents)
         temp_file_path = tmp_file.name
 
     try:
-        if platform.system() == "Windows":
-            pipeline = PaddleOCRVL(
-                use_layout_detection=False,
-                vl_rec_api_model_name="PaddlePaddle/PaddleOCR-VL-1.6",
-            )
-        else: 
-             pipeline = PaddleOCRVL(
-                use_layout_detection=False,
-                vl_rec_backend="mlx-vlm-server", 
-                vl_rec_server_url="http://localhost:8111/",
-                vl_rec_api_model_name="PaddlePaddle/PaddleOCR-VL-1.6",
-            )
-             
-        output = pipeline.predict(input=temp_file_path)
-        ocr_text = output[0]['parsing_res_list']
-
-        client = AsyncOpenAI(
-            base_url="https://openrouter.ai/api/v1",
-            api_key=OPENROUTER_API_KEY,
-        )
-
-        # Streaming of AI response
-        async def ai_stream_generator():
-            try:
-                response = await client.chat.completions.create(
-                    stream=True,
-                    model="openrouter/free",
-                    messages=[
-                        {
-                            'role': 'user',
-                            'content': f'''
-                            Act as an expert ATS (Applicant Tracking System) scanner, technical recruiter, and professional resume writer with 15+ years of experience. 
-
-                            I want you to analyze my current resume based on industry-standard ATS-friendliness, modern hiring guidelines, and recruitment best practices. Do not fabricate or invent any new work experiences, job titles, or metrics—strictly use the factual background provided.
-
-                            Here is my resume detected by OCR:
-                            {ocr_text}
-
-                            Please provide your output in the following clear sections:
-                            1. ATS Compliance Rating: Give an estimated score (0-100%) based on structural parseability, formatting safety, and structural best practices.
-                            2. Structural & Formatting Flaws: Identify any elements that will break an ATS parser (e.g., tables, columns, text boxes, headers/footers, special fonts, icons, or missing standard section titles).
-                            3. Bullet Point & Metrics Audit: Point out vague bullet points, missing quantifiable achievements (metrics/KPIs), and weak action verbs.
-                            4. Optimized Rewrite: Rewrite my professional summary and work experience bullet points to maximize impact, use strong action verbs, and follow the Google X-Y-Z formula (Accomplished [X] as measured by [Y], by doing [Z]), while strictly adhering to my actual, factual background.
-                            [SYSTEM INSTRUCTION: MARKDOWN FORMATTING REQUIREMENTS]
-                            
-                            [VITAL] You are generating Markdown output to be parsed directly by `react-markdown` with `remark-gfm`. 
-
-                            [SYSTEM INSTRUCTION: MARKDOWN FORMATTING RULES]
-                            You must format all response output using strictly valid GitHub Flavored Markdown (GFM). Follow these formatting rules without exception:
-
-                            1. HEADINGS:
-                            - Always place a blank line (double newline) before and after every heading.
-                            - Always put exactly one space between the heading hashes and the text (e.g., use "## 1. Title", NEVER "##1. Title").
-                            - NEVER put extra hashes before numbers (e.g., NEVER output "## #1. Title" or "###1. Title").
-                            - Follow standard numbered heading structures: "## 1. Title", "## 2. Title".
-
-                            2. TABLES:
-                            - All Markdown tables MUST be preceded and followed by a blank line.
-                            - Use standard GFM table syntax with a header row, divider row (|---|---|), and data rows.
-                            - Never combine table rows or text onto single continuous lines.
-
-                            3. LISTS:
-                            - Always leave a space between list markers/bullets and the text (e.g., "- ❌ Missing" NOT "-❌Missing").
-                            - Ensure list items are placed on separate lines.
-
-                            4. SPACING & PARAGRAPHS:
-                            - Ensure standard double-newlines (\n\n) between distinct paragraphs, lists, headings, and tables to prevent text collapsing or unparsed blocks.
-                            
-                            5. DO NOT use hastags if possible for headers
-                            ''',
-
-                        },
-                    ],
-                    extra_body={"reasoning": {"enabled": True}}
-                )
-                
-                async for chunk in response:
-                    if chunk.choices and len(chunk.choices) > 0:
-                        content = chunk.choices[0].delta.content
-                        if content:
-                            # \n line fix for frontend
-                            safe_content = content.replace("\n", "\\n")
-                            yield f"data: {safe_content}\n\n"
-
-            except Exception as stream_err:
-                yield f"data: Error during streaming: {str(stream_err)}\n\n"
-            finally:
-                # Cleanup the temp file after streaming completes or drops
-                if os.path.exists(temp_file_path):
-                    os.remove(temp_file_path)
-
-        # 2. Return the generator wrapped inside FastAPI's StreamingResponse
-        return StreamingResponse(ai_stream_generator(), media_type="text/event-stream")
-
-    except Exception as e:
-        # Cleanup temp file if an error happens before streaming begins
+        # Offload CPU/inference extraction to worker thread to avoid blocking FastAPI event loop
+        extracted_text, method = await asyncio.to_thread(extract_document_text, temp_file_path, ext)
+    except Exception as extract_err:
+        raise HTTPException(status_code=500, detail=str(extract_err))
+    finally:
+        # Purge temporary file immediately once extraction is done
         if os.path.exists(temp_file_path):
-            os.remove(temp_file_path)
-        print(f"Initialization error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+            try:
+                os.remove(temp_file_path)
+            except OSError:
+                pass
+
+    if not extracted_text or not extracted_text.strip():
+        raise HTTPException(status_code=422, detail="No readable text could be extracted from this document.")
+
+    # Return dual-pipeline stream (Markdown critique + Structured JSON)
+    return StreamingResponse(
+        generate_ats_stream(extracted_text, job_description),
+        media_type="text/event-stream"
+    )
