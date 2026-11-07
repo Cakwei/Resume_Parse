@@ -52,7 +52,7 @@ flowchart TD
 | Frontend | React 19, TanStack Start & Router, Tailwind CSS v4, Biome, Lucide & Tabler Icons |
 | Backend | Python 3.12, FastAPI, Uvicorn, PyMuPDF (fitz), Pydantic v2 |
 | OCR / VLM Engines | **macOS (Apple Silicon):** MLX-VLM (Local fallback)<br>**Windows (NVIDIA GPU):** PaddleOCR, PaddlePaddle GPU |
-| AI Integrations | OpenRouter API (`openrouter/free` or customizable LLMs via OpenAI AsyncClient) |
+| AI Integrations | Google Gemini API (`gemini-3.8-flash` via `google-genai` SDK) |
 
 ## ⚡ Key Features
 
@@ -79,7 +79,7 @@ flowchart TD
 
 - **Node.js:** v18.0.0 or higher (pnpm recommended)
 - **Python:** v3.12.*
-- **OpenRouter API Key:** Obtainable from OpenRouter.ai
+- **Gemini API Key:** Obtainable from Google AI Studio (aistudio.google.com)
 - **Hardware Requirements:**
   - Windows: NVIDIA GPU with CUDA 12.x drivers installed.
   - macOS: Apple Silicon (M1/M2/M3/M4) running macOS Monterey or later.
@@ -89,7 +89,7 @@ flowchart TD
 Create a `.env` file in the root directory:
 
 ```
-OPENROUTER_API_KEY=your_openrouter_api_key_here
+GEMINI_API_KEY=your_gemini_api_key_here
 ```
 
 ### 2. Backend Installation

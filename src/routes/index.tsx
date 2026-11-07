@@ -433,7 +433,7 @@ function Home() {
 					<div className="p-4 bg-indigo-50 border border-indigo-100 rounded-2xl flex items-center space-x-3 text-indigo-900 text-xs font-semibold animate-pulse">
 						<Loader2 className="w-4 h-4 animate-spin text-indigo-600" />
 						<span>
-							Extracting layout & analyzing with OpenRouter models... Stream
+							Extracting layout & analyzing with Gemini models... Stream
 							updating below.
 						</span>
 					</div>

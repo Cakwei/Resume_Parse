@@ -4,14 +4,20 @@ import asyncio
 from typing import Optional, AsyncGenerator
 from pathlib import Path
 from dotenv import load_dotenv
-from openai import AsyncOpenAI
+from google import genai
+from google.genai import types
 from schemas.resume import ATSScoreBreakdown, CandidateProfile
 
 current_dir = Path(__file__).resolve().parent
 env_path = current_dir.parent.parent / '.env'
 load_dotenv(dotenv_path=env_path)
 
-OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "")
+GEMINI_API_KEY = (
+    os.getenv("GEMINI_API_KEY")
+    or os.getenv("GOOGLE_API_KEY")
+    or os.getenv("OPENROUTER_API_KEY", "")
+)
+
 MAX_RESUME_CHARS = 30000
 
 def _truncate_text(text: str, max_chars: int = MAX_RESUME_CHARS) -> str:
@@ -78,101 +84,63 @@ def build_schema_prompt(resume_text: str, job_description: Optional[str] = None)
     jd_instruction = ""
     if job_description and job_description.strip():
         jd_instruction = f"""
-        Target Job Description:
+        [TARGET JOB DESCRIPTION]
         \"\"\"{job_description.strip()}\"\"\"
-        Compare candidate skills with the target job description to compute `role_match_score` (0-100), `matched_skills` (list of matching strings), and `missing_skills` (list of missing strings).
+        Compare candidate skills with the target job description to compute:
+        - `role_match_score` (0-100 integer)
+        - `matched_skills` (list of matching skills found in the resume)
+        - `missing_skills` (list of key required skills missing from the resume)
         """
     else:
         jd_instruction = """
-        No target job description provided. Set `role_match_score` to null, `matched_skills` to the candidate's top strengths, and `missing_skills` to general industry-standard technical skills that would strengthen the profile.
+        [NO TARGET JOB DESCRIPTION]
+        - Set `role_match_score` to null.
+        - Set `matched_skills` to the candidate's top identified strengths.
+        - Set `missing_skills` to standard industry-expected skills for this domain that would improve the profile.
         """
 
-    schema_example = json.dumps({
-        "overall_score": 85,
-        "parseability": 90,
-        "keyword_relevance": 82,
-        "formatting_safety": 92,
-        "metric_impact": 80,
-        "role_match_score": 75,
-        "matched_skills": ["Python", "Docker"],
-        "missing_skills": ["Kubernetes", "AWS"],
-        "profile": {
-            "name": "Full Name",
-            "email": "email@example.com",
-            "phone": "+1 234-567-8900",
-            "summary": "Professional summary...",
-            "skills": ["Skill1", "Skill2"],
-            "experience": [
-                {
-                    "title": "Title",
-                    "company": "Company",
-                    "location": "City, Country",
-                    "dates": "2020 - 2024",
-                    "bullets": ["Achievement 1", "Achievement 2"]
-                }
-            ],
-            "education": [
-                {
-                    "degree": "Degree",
-                    "institution": "University",
-                    "dates": "2016 - 2020",
-                    "location": "City, Country",
-                    "gpa": "3.8"
-                }
-            ]
-        }
-    }, indent=2)
-
     return f"""
-You are a precise data extraction and ATS scoring engine. Extract the candidate's resume information and compute ATS score metrics into strictly valid JSON matching this schema:
-
-{schema_example}
+You are a precise data extraction and ATS scoring engine. Extract the candidate's resume information and compute ATS score metrics into structured data matching the specified schema.
 
 {jd_instruction}
 
 Resume text:
 \"\"\"{safe_resume}\"\"\"
-
-Output ONLY valid JSON. No markdown fences, no explanatory text.
 """
 
 async def generate_ats_stream(resume_text: str, job_description: Optional[str] = None) -> AsyncGenerator[str, None]:
     """
-    Dual-worker streaming generator:
-    1. Worker 1 streams the real-time Markdown audit critique to the user.
-    2. Worker 2 concurrently executes structured JSON extraction (profile + scores).
+    Dual-worker streaming generator using Google Gemini API (`gemini-3.8-flash`):
+    1. Worker 1 streams real-time Markdown audit critique to the user via SSE.
+    2. Worker 2 concurrently executes structured Pydantic schema extraction (`ATSScoreBreakdown`).
     3. Emits `data: [STRUCTURED_JSON] {...}` once Worker 2 finishes.
     """
-    client = AsyncOpenAI(
-        base_url="https://openrouter.ai/api/v1",
-        api_key=OPENROUTER_API_KEY,
-    )
+    client = genai.Client(api_key=GEMINI_API_KEY) if GEMINI_API_KEY else genai.Client()
 
     audit_prompt = build_audit_prompt(resume_text, job_description)
     schema_prompt = build_schema_prompt(resume_text, job_description)
 
-    # Async task for structured JSON extraction
+    # Worker 2: Structured JSON extraction using Gemini native response_schema
     async def extract_structured_json():
         try:
-            res = await client.chat.completions.create(
-                model="openrouter/free",
-                messages=[{"role": "user", "content": schema_prompt}],
-                response_format={"type": "json_object"}
+            res = await client.aio.models.generate_content(
+                model="gemini-3.8-flash",
+                contents=schema_prompt,
+                config=types.GenerateContentConfig(
+                    response_mime_type="application/json",
+                    response_schema=ATSScoreBreakdown,
+                ),
             )
-            raw_content = res.choices[0].message.content or "{}"
-            # Clean possible markdown wrapping if returned
-            clean_json = raw_content.strip()
-            if clean_json.startswith("```json"):
-                clean_json = clean_json[7:]
-            if clean_json.startswith("```"):
-                clean_json = clean_json[3:]
-            if clean_json.endswith("```"):
-                clean_json = clean_json[:-3]
-            clean_json = clean_json.strip()
 
-            data = json.loads(clean_json)
-            validated = ATSScoreBreakdown.model_validate(data)
+            if hasattr(res, "parsed") and res.parsed:
+                if isinstance(res.parsed, ATSScoreBreakdown):
+                    return res.parsed.model_dump_json()
+                return ATSScoreBreakdown.model_validate(res.parsed).model_dump_json()
+
+            raw_text = res.text or "{}"
+            validated = ATSScoreBreakdown.model_validate_json(raw_text)
             return validated.model_dump_json()
+
         except Exception as e:
             # Fallback baseline data if extraction encounters issues
             fallback = ATSScoreBreakdown(
@@ -184,27 +152,23 @@ async def generate_ats_stream(resume_text: str, job_description: Optional[str] =
                 role_match_score=70 if job_description else None,
                 matched_skills=[],
                 missing_skills=[],
-                profile=CandidateProfile(summary=f"Parsed from resume. Notice: {str(e)[:100]}") # type: ignore
+                profile=CandidateProfile(summary=f"Parsed from resume. Notice: {str(e)[:100]}")
             )
             return fallback.model_dump_json()
 
     json_task = asyncio.create_task(extract_structured_json())
 
+    # Worker 1: Streaming Markdown Audit
     try:
-        # Stream Worker 1: Markdown Audit
-        response = await client.chat.completions.create(
-            stream=True,
-            model="openrouter/free",
-            messages=[{"role": "user", "content": audit_prompt}],
-            extra_body={"reasoning": {"enabled": True}}
+        response_stream = await client.aio.models.generate_content_stream(
+            model="gemini-3.8-flash",
+            contents=audit_prompt,
         )
 
-        async for chunk in response:
-            if chunk.choices and len(chunk.choices) > 0:
-                content = chunk.choices[0].delta.content
-                if content:
-                    safe_content = content.replace("\n", "\\n")
-                    yield f"data: {safe_content}\n\n"
+        async for chunk in response_stream:
+            if chunk.text:
+                safe_content = chunk.text.replace("\n", "\\n")
+                yield f"data: {safe_content}\n\n"
 
     except Exception as stream_err:
         yield f"data: Error during audit streaming: {str(stream_err)}\n\n"
